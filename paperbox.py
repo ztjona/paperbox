@@ -1,10 +1,10 @@
 #! /usr/bin/env python
 
 """
-paperbox - Generate a pdf with the lines to create a paper box with the given dimensions.
+paperbox - Generate a pdf with the lines to cut and glue a paper box with the given dimensions.
 
 Usage:
-    paperbox.py <length> <width> <height> [--verbose=<level>]
+    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>]
     paperbox.py -h|--help
     paperbox.py --version
 
@@ -21,6 +21,7 @@ Options:
                             WARN=3, 
                             ERROR=4, 
                             CRITICAL=5 [default: 2].
+    --gap <gap>             Gap between the faces in milimeters [default: 0.75].
 """
 
 """
@@ -60,6 +61,7 @@ def generate_paper_box(
     pagesize: tuple[float, float] = A4,
     output_folder=".//",
     output_name="paper_box.pdf",
+    gap=0.075,
 ) -> None:
     """Generate a pdf with the lines to create a paper box with the given dimensions.
     It reorders the dimensions to be l >= w >= h.
@@ -80,8 +82,15 @@ def generate_paper_box(
         f"Generating paper box with dimensions: {l} length, {w} width, {h} height."
     )
 
-    # --- checking
+    # --- gapping condition
+    GAPPING = gap > 0  # create gaps between the faces
 
+    if GAPPING:
+        l += 2 * gap
+        w += 2 * gap
+        h += 2 * gap
+
+    # --- checking
     L_PAGE = pagesize[1] / 28.35  # conversion to cm
     W_PAGE = pagesize[0] / 28.35
 
@@ -90,12 +99,12 @@ def generate_paper_box(
 
     assert (
         L_MAX < L_PAGE
-    ), f"Too big length or height. Occupied space can not be more than {L_PAGE} cm. Current is {L_MAX} cm."
+    ), f"Too big length or height. Occupied space can not be more than {L_PAGE:.2f} cm. Current is {L_MAX:.2f} cm."
 
     W_MAX = w + 2 * h
     assert (
         W_MAX <= W_PAGE
-    ), f"Too big width or height. Occupied space can not be more than {W_PAGE} cm. Current is {W_MAX} cm."
+    ), f"Too big width or height. Occupied space can not be more than {W_PAGE:.2f} cm. Current is {W_MAX:.2f} cm."
 
     # -- mid squares
     if make_long_mid_faces:
@@ -105,7 +114,7 @@ def generate_paper_box(
         w_mid = W_WIDE_MAX / 2
         if l > w_mid:
             logging.warning(
-                f"Width of the mid faces is too big {W_WIDE} and {W_WIDE_MAX}. It will be reduced from {l} to {w_mid}."
+                f"Width of the mid faces is too big {W_WIDE:.2f} and {W_WIDE_MAX:.2f}. It will be reduced from {l:.2f} to {w_mid:.2f}."
             )
         else:
             w_mid = l
@@ -156,6 +165,31 @@ def generate_paper_box(
 
     c.rect(x0, y0, w_mid * cm, h * cm)
 
+    # ----- GAPPING
+    if not GAPPING:
+        logging.info("Saving pdf.")
+        c.save()
+        return
+
+    # ----- GAPPING
+    # Executes everything again but with gaps
+    logging.debug("Drawing main faces with gaps.")
+    l -= 2 * gap
+    w -= 2 * gap
+    h -= 2 * gap
+    x0 = (x_offset + w_mid + gap) * cm
+    y0 = (y_offset + gap) * cm
+
+    c.rect(x0, y0, w * cm, h * cm)
+    y0 += (h + 2 * gap) * cm
+    c.rect(x0, y0, w * cm, l * cm)
+    y0 += (l + 2 * gap) * cm
+    c.rect(x0, y0, w * cm, h * cm)
+    y0 += (h + 2 * gap) * cm
+    c.rect(x0, y0, w * cm, l * cm)
+    y0 += (l + 2 * gap) * cm
+    c.rect(x0, y0, w * cm, h * cm)
+
     logging.info("Saving pdf.")
     c.save()
     return
@@ -164,7 +198,7 @@ def generate_paper_box(
 if __name__ == "__main__":
     args = docopt(
         doc=__doc__,
-        version="1",
+        version="1.1",
     )
     print(args)
     if args["--verbose"] == "1":
@@ -190,4 +224,5 @@ if __name__ == "__main__":
     w = float(args["<width>"])
     h = float(args["<height>"])
 
-    generate_paper_box(l, w, h)
+    gap = float(args["--gap"]) / 10  # from mm to cm
+    generate_paper_box(l, w, h, gap=gap)
