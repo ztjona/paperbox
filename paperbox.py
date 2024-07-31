@@ -4,7 +4,7 @@
 paperbox - Generate a pdf with the lines to cut and glue a paper box with the given dimensions.
 
 Usage:
-    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>] [-F=<output_folder>] [-o=<output_name>]
+    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>] [--F=<output_folder>] [--o=<output_name>] [--m=<margin>]
     paperbox.py -h|--help
     paperbox.py --version
 
@@ -15,15 +15,16 @@ Description:
 
 Options:
     -h,--help               show help.
-    --verbose <level>       verbose levels:
+    --verbose=<level>       verbose levels:
                             DEBUG=1, 
                             INFO=2, 
                             WARN=3, 
                             ERROR=4, 
                             CRITICAL=5 [default: 2].
-    --gap <gap>             Gap between the faces in milimeters [default: 0.75].
-    -F <output_folder>      Folder to save the pdf [default: .//].
-    -o <output_name>        Name of the pdf file [default: paper_box.pdf].
+    --gap=<gap>             Gap between the faces in milimeters [default: 0.75].
+    --F=<output_folder>      Folder to save the pdf [default: .//].
+    --o=<output_name>        Name of the pdf file [default: paper_box.pdf].
+    --m=<margin>             Margin for x and y in centimeters [default: 0.5].
 """
 
 """
@@ -52,9 +53,6 @@ from reportlab.lib.units import cm
 make_long_mid_faces = True
 ALLOW_WARPING = True
 
-x_offset = 0.5  # in cm
-y_offset = 0.5  # in cm
-
 
 # ----------------------------- #### --------------------------
 def generate_paper_box(
@@ -66,6 +64,9 @@ def generate_paper_box(
     output_folder=".//",
     output_name="paper_box.pdf",
     gap=0.075,
+    cut_gap=0.25,
+    x_offset=0.5,
+    y_offset=0.5,
 ) -> None:
     """Generate a pdf with the lines to create a paper box with the given dimensions.
     It reorders the dimensions to be l >= w >= h.
@@ -74,10 +75,16 @@ def generate_paper_box(
     ``l``: length of the box.
     ``w``: width of the box.
     ``h``: height of the box.
+    ``pagesize``: size of the page. Default is A4.
+    ``output_folder``: folder where the pdf will be saved. Default is the current folder.
+    ``output_name``: name of the pdf file. Default is "paper_box.pdf".
+    ``gap``: gap between the faces. Default is 0.075 cm.
+    ``cut_gap``: gap between main faces and cut faces. Default is 0.5 cm.
+    ``x_offset``: margin for x. Default is 0.5 cm.
+    ``y_offset``: margin for y. Default is 0.5 cm.
 
     ## Return
     None
-
     """
 
     # Reorder the dimensions
@@ -148,33 +155,82 @@ def generate_paper_box(
     y0 += h * cm
     c.rect(x0, y0, w * cm, l * cm)
     y0 += l * cm
-    c.rect(x0, y0, w * cm, h * cm)
 
-    # sides
+    # cover
+    c.setDash(4, 1)
+    c.rect(x0 + cut_gap * cm, y0, (w - 2 * cut_gap) * cm, (h - cut_gap) * cm)
+    c.setDash([])
+
+    # ### ------- sides
     logging.debug("Drawing sides.")
     x0 = (x_offset + w_mid - h) * cm
     y0 = y_offset * cm
 
-    c.rect(x0, y0, h * cm, (l + h) * cm)
-    x0 += (w + h) * cm
-    c.rect(x0, y0, h * cm, (l + h) * cm)
+    c.setDash(1, 2)
+    c.rect(
+        x0 + cut_gap * cm,
+        y0 + cut_gap * cm,
+        (h - 2 * cut_gap) * cm,
+        (h - cut_gap) * cm,
+    )
+    c.setDash([])
 
+    # left side
+    c.rect(x0, y0 + h * cm, h * cm, l * cm)
+
+    x0 += (w + h) * cm
+
+    c.setDash(1, 2)
+    c.rect(
+        x0 + cut_gap * cm,
+        y0 + cut_gap * cm,
+        (h - 2 * cut_gap) * cm,
+        (h - cut_gap) * cm,
+    )
+    c.setDash([])
+
+    # right side
+    c.rect(x0, y0 + h * cm, h * cm, l * cm)
+
+    # up side faces
     y0 += (l + h * 2) * cm
-    c.rect(x0, y0, h * cm, l * cm)
+
+    c.setDash(4, 1)
+    # up right face
+    c.rect(x0, y0 + cut_gap * cm, (h - cut_gap) * cm, (l - 2 * cut_gap) * cm)
     x0 -= (w + h) * cm
-    c.rect(x0, y0, h * cm, l * cm)
+
+    # up left face
+    c.rect(
+        x0 + cut_gap * cm, y0 + cut_gap * cm, (h - cut_gap) * cm, (l - 2 * cut_gap) * cm
+    )
+    c.setDash([])
 
     # mid faces
+    c.setDash(1, 2)
     logging.debug("Drawing mid faces.")
     x0 = x_offset * cm
     y0 = (y_offset + h + l) * cm
 
-    c.rect(x0, y0, w_mid * cm, h * cm)
+    # left side
+    c.rect(
+        x0 + cut_gap * cm,
+        y0 + cut_gap * cm,
+        (w_mid - cut_gap) * cm,
+        (h - 2 * cut_gap) * cm,
+    )
 
     x0 = (x_offset + w_mid + w) * cm
     y0 = (y_offset + h + l) * cm
 
-    c.rect(x0, y0, w_mid * cm, h * cm)
+    # right side
+    c.rect(
+        x0,
+        y0 + cut_gap * cm,
+        (w_mid - cut_gap) * cm,
+        (h - 2 * cut_gap) * cm,
+    )
+    c.setDash([])
 
     # ----- GAPPING
     if not GAPPING:
@@ -198,8 +254,6 @@ def generate_paper_box(
     c.rect(x0, y0, w * cm, h * cm)
     y0 += (h + 2 * gap) * cm
     c.rect(x0, y0, w * cm, l * cm)
-    y0 += (l + 2 * gap) * cm
-    c.rect(x0, y0, w * cm, h * cm)
 
     logging.info("Saving pdf.")
     c.save()
@@ -211,6 +265,7 @@ if __name__ == "__main__":
         doc=__doc__,
         version="1.1",
     )
+
     print(args)
     if args["--verbose"] == "1":
         _level = logging.DEBUG
@@ -236,8 +291,15 @@ if __name__ == "__main__":
     h = float(args["<height>"])
 
     gap = float(args["--gap"]) / 10  # from mm to cm
-    output_folder = args["-F"]
-    output_name = args["-o"]
+    output_folder = args["--F"]
+    output_name = args["--o"]
     generate_paper_box(
-        l, w, h, gap=gap, output_folder=output_folder, output_name=output_name
+        l,
+        w,
+        h,
+        gap=gap,
+        output_folder=output_folder,
+        output_name=output_name,
+        x_offset=float(args["--m"]),
+        y_offset=float(args["--m"]),
     )
