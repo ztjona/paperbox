@@ -4,7 +4,7 @@
 paperbox - Generate a pdf with the lines to cut and glue a paper box with the given dimensions.
 
 Usage:
-    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>]
+    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>] [-F=<output_folder>] [-o=<output_name>]
     paperbox.py -h|--help
     paperbox.py --version
 
@@ -22,6 +22,8 @@ Options:
                             ERROR=4, 
                             CRITICAL=5 [default: 2].
     --gap <gap>             Gap between the faces in milimeters [default: 0.75].
+    -F <output_folder>      Folder to save the pdf [default: .//].
+    -o <output_name>        Name of the pdf file [default: paper_box.pdf].
 """
 
 """
@@ -48,8 +50,10 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 
 make_long_mid_faces = True
+ALLOW_WARPING = True
+
 x_offset = 0.5  # in cm
-y_offset = 1  # in cm
+y_offset = 0.5  # in cm
 
 
 # ----------------------------- #### --------------------------
@@ -97,11 +101,18 @@ def generate_paper_box(
     assert l >= w >= h > 0, "Dimmesion/s can not be zero."
     L_MAX = l * 2 + 3 * h
 
-    assert (
-        L_MAX < L_PAGE
-    ), f"Too big length or height. Occupied space can not be more than {L_PAGE:.2f} cm. Current is {L_MAX:.2f} cm."
+    if ALLOW_WARPING:
+        if L_MAX >= L_PAGE:
+            logging.warning(
+                f"Length is too big {L_MAX:.2f} with maximum of {L_PAGE:.2f}. "
+            )
+    else:
+        assert (
+            L_MAX < L_PAGE
+        ), f"Too big length or height. Occupied space can not be more than {L_PAGE:.2f} cm. Current is {L_MAX:.2f} cm."
 
     W_MAX = w + 2 * h
+    logging.debug(f"Width is {W_MAX:.2f} and {W_PAGE:.2f}.")
     assert (
         W_MAX <= W_PAGE
     ), f"Too big width or height. Occupied space can not be more than {W_PAGE:.2f} cm. Current is {W_MAX:.2f} cm."
@@ -225,4 +236,8 @@ if __name__ == "__main__":
     h = float(args["<height>"])
 
     gap = float(args["--gap"]) / 10  # from mm to cm
-    generate_paper_box(l, w, h, gap=gap)
+    output_folder = args["-F"]
+    output_name = args["-o"]
+    generate_paper_box(
+        l, w, h, gap=gap, output_folder=output_folder, output_name=output_name
+    )
