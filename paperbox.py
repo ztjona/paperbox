@@ -4,7 +4,7 @@
 paperbox - Generate a pdf with the lines to cut and glue a paper box with the given dimensions.
 
 Usage:
-    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>] [--F=<output_folder>] [--o=<output_name>] [--m=<margin>]
+    paperbox.py <length> <width> <height> [--verbose=<level>] [--gap=<gap>] [--F=<output_folder>] [--o=<output_name>] [--m=<margin>] [--fold]
     paperbox.py -h|--help
     paperbox.py --version
 
@@ -25,6 +25,8 @@ Options:
     --F=<output_folder>      Folder to save the pdf [default: .//].
     --o=<output_name>        Name of the pdf file [default: paper_box.pdf].
     --m=<margin>             Margin for x and y in centimeters [default: 0.5].
+    --fold                  Fold-only box (no glue). Generates a masu-style tray
+                            and a matching lid on the same PDF.
 """
 
 """
@@ -53,6 +55,144 @@ make_long_mid_faces = True
 
 
 # ----------------------------- #### --------------------------
+def _draw_masu_net(
+    c,
+    x0: float,
+    y0: float,
+    l: float,
+    w: float,
+    h: float,
+    *,
+    label: str = "",
+) -> None:
+    """Draw a masu-style fold box net at (x0, y0) in cm.
+    l: base length, w: base width, h: wall height.
+    """
+    X = x0 * cm
+    Y = y0 * cm
+    L = l * cm
+    W = w * cm
+    H = h * cm
+    NL = L + 2 * H
+    NW = W + 2 * H
+
+    # Outer boundary — cut here
+    c.setDash([])
+    c.setLineWidth(0.5)
+    c.rect(X, Y, NL, NW)
+
+    # Main score lines — fold walls up (long dashes)
+    c.setDash(6, 2)
+    c.setLineWidth(0.4)
+    c.line(X + H, Y, X + H, Y + NW)  # left
+    c.line(X + H + L, Y, X + H + L, Y + NW)  # right
+    c.line(X, Y + H, X + NL, Y + H)  # bottom
+    c.line(X, Y + H + W, X + NL, Y + H + W)  # top
+
+    # Corner diagonal lines — fold corner triangles inward (short dashes)
+    c.setDash(2, 3)
+    c.setLineWidth(0.35)
+    c.line(X, Y, X + H, Y + H)  # bottom-left
+    c.line(X + NL, Y, X + H + L, Y + H)  # bottom-right
+    c.line(X, Y + NW, X + H, Y + H + W)  # top-left
+    c.line(X + NL, Y + NW, X + H + L, Y + H + W)  # top-right
+
+    c.setDash([])
+    c.setLineWidth(1)
+
+    # Label and dimensions in the base area
+    if label:
+        c.setFont("Helvetica-Bold", 8)
+        c.drawCentredString(X + H + L / 2, Y + H + W / 2 + 0.1 * cm, label)
+        c.setFont("Helvetica", 6)
+        c.drawCentredString(
+            X + H + L / 2,
+            Y + H + W / 2 - 0.25 * cm,
+            f"{l:.2f} \u00d7 {w:.2f} \u00d7 {h:.2f} cm",
+        )
+
+    # Legend below the net
+    c.setFont("Helvetica", 5.5)
+    c.drawString(
+        X,
+        Y - 0.38 * cm,
+        "\u2014 cut    - - fold walls up    \u00b7\u00b7 fold corners inward",
+    )
+
+
+def generate_fold_box(
+    l: float,
+    w: float,
+    h: float,
+    *,
+    pagesize: tuple = A4,
+    output_folder: str = "./",
+    output_name: str = "paper_box.pdf",
+    lid_extra: float = 0.2,
+    x_offset: float = 0.5,
+    y_offset: float = 0.5,
+) -> None:
+    """Generate a fold-only masu-style box with a matching lid (no glue needed).
+
+    ## Parameters
+    ``l``, ``w``, ``h``: interior dimensions of the box body (cm).
+    ``lid_extra``: how much larger (cm) the lid base is vs the box base per side.
+
+    ## Return
+    None
+    """
+    l, w, h = sorted([l, w, h], reverse=True)
+    logging.debug(f"Generating fold box: l={l}, w={w}, h={h}.")
+
+    L_PAGE = pagesize[1] / cm
+    W_PAGE = pagesize[0] / cm
+
+    # Lid: slightly larger base, shallower walls (~1/3 box height)
+    h_lid = max(round(h / 3, 2), 0.5)
+    l_lid = l + lid_extra
+    w_lid = w + lid_extra
+
+    net_l = l + 2 * h  # box net width
+    net_w = w + 2 * h  # box net height
+    net_lid_l = l_lid + 2 * h_lid  # lid net width
+    net_lid_w = w_lid + 2 * h_lid  # lid net height
+
+    sp = x_offset  # spacing between pieces
+
+    # Choose layout
+    fits_side_by_side = (
+        2 * x_offset + net_l + sp + net_lid_l <= W_PAGE
+        and 2 * y_offset + max(net_w, net_lid_w) <= L_PAGE
+    )
+    fits_stacked = (
+        2 * x_offset + max(net_l, net_lid_l) <= W_PAGE
+        and 2 * y_offset + net_w + sp + net_lid_w <= L_PAGE
+    )
+
+    full_file_path = output_folder + output_name
+    logging.info(f"Generating fold box in {full_file_path}.")
+    c = canvas.Canvas(full_file_path, pagesize=pagesize)
+
+    if fits_side_by_side:
+        logging.debug("Fold box layout: side by side.")
+        _draw_masu_net(c, x_offset, y_offset, l, w, h, label="BOX")
+        _draw_masu_net(
+            c, x_offset + net_l + sp, y_offset, l_lid, w_lid, h_lid, label="LID"
+        )
+    elif fits_stacked:
+        logging.debug("Fold box layout: stacked.")
+        _draw_masu_net(c, x_offset, y_offset + net_lid_w + sp, l, w, h, label="BOX")
+        _draw_masu_net(c, x_offset, y_offset, l_lid, w_lid, h_lid, label="LID")
+    else:
+        logging.debug("Fold box layout: two pages.")
+        _draw_masu_net(c, x_offset, y_offset, l, w, h, label="BOX")
+        c.showPage()
+        _draw_masu_net(c, x_offset, y_offset, l_lid, w_lid, h_lid, label="LID")
+
+    logging.info("Saving pdf.")
+    c.save()
+
+
 def generate_paper_box(
     l: float,
     w: float,
@@ -291,14 +431,26 @@ if __name__ == "__main__":
     gap = float(args["--gap"]) / 10  # from mm to cm
     output_folder = args["--F"]
     output_name = args["--o"]
-    generate_paper_box(
-        l,
-        w,
-        h,
-        gap=gap,
-        output_folder=output_folder,
-        output_name=output_name,
-        x_offset=float(args["--m"]),
-        y_offset=float(args["--m"]),
-    )
+
+    if args["--fold"]:
+        generate_fold_box(
+            l,
+            w,
+            h,
+            output_folder=output_folder,
+            output_name=output_name,
+            x_offset=float(args["--m"]),
+            y_offset=float(args["--m"]),
+        )
+    else:
+        generate_paper_box(
+            l,
+            w,
+            h,
+            gap=gap,
+            output_folder=output_folder,
+            output_name=output_name,
+            x_offset=float(args["--m"]),
+            y_offset=float(args["--m"]),
+        )
     print(f"DONE: PDF successfully generated at '{output_folder}{output_name}'.")
